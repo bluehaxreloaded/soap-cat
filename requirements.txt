@@ -1,0 +1,6 @@
+cleaninty @ git+https://github.com/luigoalma/cleaninty@d533a62 # copying code from github while using outdated pypi release no work
+pyctr==0.6.0 # for soupman
+python-dotenv==1.0.0
+py-cord==2.6.1
+mysql-connector-python==9.1.0
+audioop-lts; python_version>='3.13' # thanks python3.13
