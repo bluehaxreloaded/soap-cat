@@ -185,7 +185,7 @@ def _run_unregister(
         virtual = False
     except SoapCodeError as e:
         if e.soaperrorcode != 434:
-            raise
+            raise e
         virtual = True
 
     if virtual:
@@ -201,7 +201,7 @@ def _run_unregister(
             device_ninja.open_without_nna()
         except NinjaException as e:
             if e.errorcode != 3136:
-                raise
+                raise e
 
         device.reboot()
 

@@ -2,6 +2,7 @@ import datetime
 from dotenv import load_dotenv
 import mysql.connector
 import os
+import soap_cat_errors
 
 
 class the_db:
@@ -55,6 +56,9 @@ class the_db:
             self.cursor.fetchall()
         except Exception:
             pass
+
+        if result is None:
+            raise soap_cat_errors.NoDonors("We're out of donors! See soapcheck")
 
         return result[0], result[1]
 

@@ -4,3 +4,5 @@ python-dotenv==1.0.0
 py-cord==2.6.1
 mysql-connector-python==9.1.0
 audioop-lts; python_version>='3.13' # thanks python3.13
+cryptography==43.0.3 # 44.0.0 bork cleaninty
+requests==2.32.4

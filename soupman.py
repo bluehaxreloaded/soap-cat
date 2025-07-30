@@ -1,5 +1,6 @@
 import discord
 import json
+from base64 import b64decode
 from discord.ext import commands
 from cleaninty.ctr.simpledevice import SimpleCtrDevice
 from cleaninty.ctr.soap.manager import CtrSoapManager
@@ -37,11 +38,27 @@ class soupman(commands.Cog):
             country = None
 
         try:
-            soapJson = SimpleCtrDevice.generate_new_json(
+            jsonStr = SimpleCtrDevice.generate_new_json(
                 otp_data=await otp.read(),
                 secureinfo_data=await secinfo.read(),
                 country=country,
             )
+
+            dev = SimpleCtrDevice(json_string=jsonStr)
+            soapMan = CtrSoapManager(dev, False)
+            helpers.CtrSoapCheckRegister(soapMan)
+            jsonStr = dev.serialize_json()
+
+            serial = b64decode(json.loads(jsonStr)["secureinfo"])[0x102:0x112]
+            serial = serial.replace(b"\x00", b"").upper().decode("utf-8")
+
+            retStr = f"Serial: {serial}\n"
+            retStr += f"Account status: {soapMan.account_status}\n"
+            if soapMan.account_status != "U":
+                retStr += f"Account register: {'Expired' if soapMan.register_expired else 'Valid'}\n"
+            retStr += f"Current effective region: {soapMan.region}\n"
+            retStr += f"Current effective country: {soapMan.country}\n"
+            retStr += f"Current effective language: {soapMan.language}\n"
         except Exception as e:
             await ctx.respond(
                 ephemeral=True, content=f"Cleaninty error:\n```\n{e}\n```"
@@ -53,7 +70,7 @@ class soupman(commands.Cog):
         try:
             await ctx.respond(
                 ephemeral=True,
-                file=discord.File(fp=StringIO(soapJson), filename="soap.json"),
+                file=discord.File(fp=StringIO(jsonStr), filename="soap.json"), content=f"```\n{retStr}```"
             )
         except Exception:
             await ctx.respond(
@@ -94,11 +111,27 @@ class soupman(commands.Cog):
             country = None
 
         try:
-            soapJson = SimpleCtrDevice.generate_new_json(
+            jsonStr = SimpleCtrDevice.generate_new_json(
                 otp_data=reader.open("otp").read(),
                 secureinfo_data=reader.open("secinfo").read(),
                 country=country,
             )
+
+            dev = SimpleCtrDevice(json_string=jsonStr)
+            soapMan = CtrSoapManager(dev, False)
+            helpers.CtrSoapCheckRegister(soapMan)
+            jsonStr = dev.serialize_json()
+
+            serial = b64decode(json.loads(jsonStr)["secureinfo"])[0x102:0x112]
+            serial = serial.replace(b"\x00", b"").upper().decode("utf-8")
+
+            retStr = f"Serial: {serial}\n"
+            retStr += f"Account status: {soapMan.account_status}\n"
+            if soapMan.account_status != "U":
+                retStr += f"Account register: {'Expired' if soapMan.register_expired else 'Valid'}\n"
+            retStr += f"Current effective region: {soapMan.region}\n"
+            retStr += f"Current effective country: {soapMan.country}\n"
+            retStr += f"Current effective language: {soapMan.language}\n"
         except Exception as e:
             await ctx.respond(
                 ephemeral=True, content=f"Cleaninty error:\n```\n{e}\n```"
@@ -110,9 +143,9 @@ class soupman(commands.Cog):
         try:
             await ctx.respond(
                 ephemeral=True,
-                file=discord.File(fp=StringIO(soapJson), filename="soap.json"),
+                file=discord.File(fp=StringIO(jsonStr), filename="soap.json"), content=f"```\n{retStr}```"
             )
-            
+
         except Exception:
             await ctx.respond(
                 ephemeral=True, content="Failed to respond with soap.json"
@@ -142,8 +175,12 @@ class soupman(commands.Cog):
             dev = SimpleCtrDevice(json_string=jsonStr)
             soapMan = CtrSoapManager(dev, False)
             helpers.CtrSoapCheckRegister(soapMan)
+            jsonStr = dev.serialize_json()
 
-            retStr = ""
+            serial = b64decode(json.loads(jsonStr)["secureinfo"])[0x102:0x112]
+            serial = serial.replace(b"\x00", b"").upper().decode("utf-8")
+
+            retStr = f"Serial: {serial}\n"
             retStr += f"Account status: {soapMan.account_status}\n"
             if soapMan.account_status != "U":
                 retStr += f"Account register: {'Expired' if soapMan.register_expired else 'Valid'}\n"
