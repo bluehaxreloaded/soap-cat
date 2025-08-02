@@ -19,6 +19,7 @@ from pyctr.type.exefs import ExeFSReader
 
 
 bot = discord.Bot(owner_id=966381737393414144)
+log_channel = None
 load_dotenv()
 
 
@@ -76,7 +77,10 @@ async def doasoap(
     except discord.errors.NotFound:
         return
 
-    print(f"doing soap for {ctx.author.global_name} ({ctx.author.id})")
+    await log(
+        f"doing soap for {ctx.author.global_name} ({ctx.author.id}) in {ctx.interaction.channel.jump_url}"
+        + f" ({ctx.interaction.channel.name})"
+    )
     resultStr = str("")
 
     if essential_exefs is not None:
@@ -85,7 +89,9 @@ async def doasoap(
             soap_name = essential_exefs.filename[:-6]
         except Exception as e:
             await ctx.respond(ephemeral=True, content=f"Failed to load essential\n{e}")
-            print("done")
+            await log(
+                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to loading the essential failing"
+            )
             return
 
     elif essential_exefs_link is not None:
@@ -96,7 +102,10 @@ async def doasoap(
                 ephemeral=True,
                 content=f"Non-200 status code: {request_data.status_code}",
             )
-            print("done")
+            await log(
+                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed "
+                + "due to non-200 status code ({request_data.status_code} when fetching exefs from link"
+            )  # split into 2 so it isn't so long
             return
 
         soap_json = generate_json(request_data.content)
@@ -107,14 +116,18 @@ async def doasoap(
         soap_name = console_json.filename[:-5]
         if not donorcheck(soap_json):
             ctx.respond(ephemeral=True, content="Failed to verify json")
-            print("done")
+            await log(
+                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to invalid json"
+            )
             return
     else:
         await ctx.respond(
             ephemeral=True,
             content="uh... what? you didn't send a .json, .exefs, or link to .exefs, try again",
         )
-        print("done")
+        await log(
+            f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to lack of file"
+        )
         return
 
     if serial is not None:
@@ -128,14 +141,18 @@ async def doasoap(
         elif len(serial) not in [10, 11, 12]:
             resultStr += f"invalid serial length, must be 10-12 characters long instead of {len(serial)}"
             await ctx.respond(ephemeral=True, content=resultStr)
-            print("done")
+            await log(
+                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to invalid serial"
+            )
             return
 
         elif serial[: len(soap_serial)] != soap_serial:
             resultStr += f"secinfo serial and given serial do not match!\nsecinfo: {soap_serial}\ngiven: {serial[: len(soap_serial)]}\n"
             resultStr += "nothing has been done to any donors or the soapee\n```"
             await ctx.respond(ephemeral=True, content=resultStr)
-            print("done")
+            await log(
+                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to mismatching serials"
+            )
             return
         else:
             resultStr += "secinfo serial and given serial match, continuing\n"
@@ -147,7 +164,9 @@ async def doasoap(
         cleaninty = cleaninty_abstractor()
     except Exception as e:
         await ctx.respond(ephemeral=True, content=f"Cleaninty error:\n```\n{e}\n```")
-        print("done")
+        await log(
+            f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to a cleaninty error"
+        )
         return
 
     soap_json = dev.serialize_json()
@@ -173,7 +192,9 @@ async def doasoap(
 
     except SoapCodeError as err:
         if err.soaperrorcode != 602:
-            print("done")
+            await log(
+                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to non-602 soap error code (wtf)"
+            )
             raise err
 
         resultStr += "sticky titles are sticking, doing system transfer...\n"
@@ -198,7 +219,7 @@ async def doasoap(
     helpers.CtrSoapCheckRegister(soapMan)
     soap_json = cleaninty.clean_json(soap_json)
 
-    print("done")
+    await log(f"soap for {ctx.author.global_name} ({ctx.author.id}) succeeded")
     resultStr += "Done!"
 
     await ctx.respond(
@@ -208,7 +229,7 @@ async def doasoap(
     )
 
     channel = bot.get_channel(ctx.channel_id)
-    
+
     if lottery:
         await channel.send(
             """The SOAP Transfer has completed! Please boot normally (with the SD inserted into the console), and then go to `System Settings -> Other Settings -> Profile -> Region Settings` and ensure the desired country is selected. If using Pretendo you will need to switch to Nintendo with Nimbus first.
@@ -361,7 +382,7 @@ async def uploaddonortodb(
         donor_country_change = "US"
         donor_language_change = "en"
 
-    print(f"uploading donor from {ctx.author.global_name} ({ctx.author.id})")
+    log(f"uploading donor from {ctx.author.global_name} ({ctx.author.id})")
 
     try:
         donor_json = cleaninty.eshop_region_change(
@@ -397,7 +418,7 @@ async def uploaddonortodb(
         ephemeral=True,
         content=f"`{donor_name}` has been uploaded to the donor database\nwant to remove it? contact blueness",
     )
-    print(f"{ctx.author.global_name} ({ctx.author.id}) uploaded {donor_name} to the db")
+    log(f"{ctx.author.global_name} ({ctx.author.id}) uploaded {donor_name} to the db")
 
 
 @bot.slash_command(description="get the info of a donor")
@@ -457,6 +478,11 @@ async def downloaddonors(ctx: discord.ApplicationContext):
         ephemeral=True,
         file=discord.File(fp=BytesIO(output.getvalue()), filename="donors.zip"),
     )
+
+
+async def log(string: str):
+    await bot.get_channel(1399953634560573551).send(content=string)
+    print(string)
 
 
 def donorcheck(input_json: str) -> bool:
@@ -521,6 +547,9 @@ async def on_ready():
             bot.user.id, permissions=discord.Permissions(permissions=2147518464)
         )
     )
+    global log_channel
+    log_channel = bot.get_channel(1399953634560573551)
+
     await bot.change_presence(activity=discord.Game(name="I HAS SOAP *om nom nom*"))
 
 
