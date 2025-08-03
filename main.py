@@ -191,6 +191,8 @@ async def doasoap(
         )
 
     except SoapCodeError as err:
+        log(err)
+        log(err.soaperrorcode)
         if err.soaperrorcode != 602:
             await log(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to non-602 soap error code (wtf)"
@@ -229,6 +231,23 @@ async def doasoap(
     )
 
     channel = bot.get_channel(ctx.channel_id)
+
+
+    member_name = ctx.channel.name.removesuffix("-needs-cleaning-🧼")
+    member_name_2 = channel.name.removesuffix("-needs-cleaning-🧼").replace("-", ".")
+
+    member_obj = ctx.guild.get_member_named(member_name)
+    member_obj_2 = ctx.interaction.guild.get_member_named(member_name_2)
+
+    # await channel.send(f"{member_obj.mention} :arrow_down:")
+
+
+    await log(
+        f"Debug info:\nmember_obj is {member_obj}\n"
+        + f"member_obj_2 is {member_obj_2}\n"
+        + f"member_name is {member_name}\n"
+        + f"member_name_2 is {member_name_2}"
+    )
 
     if lottery:
         await channel.send(
