@@ -191,8 +191,8 @@ async def doasoap(
         )
 
     except SoapCodeError as err:
-        log(err)
-        log(err.soaperrorcode)
+        await log(err)
+        await log(err.soaperrorcode)
         if err.soaperrorcode != 602:
             await log(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to non-602 soap error code (wtf)"
@@ -401,7 +401,7 @@ async def uploaddonortodb(
         donor_country_change = "US"
         donor_language_change = "en"
 
-    log(f"uploading donor from {ctx.author.global_name} ({ctx.author.id})")
+    await log(f"uploading donor from {ctx.author.global_name} ({ctx.author.id})")
 
     try:
         donor_json = cleaninty.eshop_region_change(
@@ -437,7 +437,7 @@ async def uploaddonortodb(
         ephemeral=True,
         content=f"`{donor_name}` has been uploaded to the donor database\nwant to remove it? contact blueness",
     )
-    log(f"{ctx.author.global_name} ({ctx.author.id}) uploaded {donor_name} to the db")
+    await log(f"{ctx.author.global_name} ({ctx.author.id}) uploaded {donor_name} to the db")
 
 
 @bot.slash_command(description="get the info of a donor")
