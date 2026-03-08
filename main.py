@@ -13,6 +13,7 @@ from cleaninty.ctr.soap import helpers
 from db_abstractor import the_db
 from discord.ext import commands
 from dotenv import load_dotenv
+from cleaninty_abstractor import cleaninty_abstractor
 from cleaninty.nintendowifi.soapenvelopebase import SoapCodeError
 from io import BytesIO, StringIO
 from pyctr.type.exefs import ExeFSReader
