@@ -13,7 +13,6 @@ from cleaninty.ctr.soap import helpers
 from db_abstractor import the_db
 from discord.ext import commands
 from dotenv import load_dotenv
-from cleaninty_abstractor import cleaninty_abstractor
 from cleaninty.nintendowifi.soapenvelopebase import SoapCodeError
 from io import BytesIO, StringIO
 from pyctr.type.exefs import ExeFSReader
@@ -720,6 +719,8 @@ def generate_json(essential) -> str:  # thanks soupman
         country = "US"
     elif country_byte == b"\x02":
         country = "GB"
+    elif country_byte == b"\x06":
+        country = "TW"
     else:
         country = None
 
