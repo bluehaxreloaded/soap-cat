@@ -134,6 +134,12 @@ class cleaninty_abstractor:
         source_json_object = json.loads(source_json)
         donor_json_name, donor_json = myDB.get_donor_json_ready_for_transfer()
 
+
+        dev = SimpleCtrDevice(json_string=donor_json)
+        soapMan = CtrSoapManager(dev, False)
+        helpers.CtrSoapCheckRegister(soapMan)
+        donor_json = dev.serialize_json()
+
         if json.loads(donor_json)["region"] != source_json_object["region"]:
             resultStr += "Source and target regions do not match, changing...\n"
             donor_json, resultStr = self.eshop_region_change(
