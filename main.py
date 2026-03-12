@@ -5,7 +5,6 @@ import json
 import re
 import os
 import requests
-import soap_cat_errors
 from base64 import b64decode
 from cleaninty.ctr.simpledevice import SimpleCtrDevice
 from cleaninty.ctr.soap.manager import CtrSoapManager
@@ -298,9 +297,11 @@ async def doasoap(
     # await channel.send(f"{member_obj.mention} :arrow_down:")
 
     await log(
-        f"Debug info:\nmember_obj is {member_obj}\n"
+        "Debug info:\n"
+        + f"member_obj is {member_obj}\n"
         + f"member_name is {member_name}\n"
         + f"user_id is {user_id}\n"
+        + f"lottery is {lottery}\n"
     )
 
     if lottery:
@@ -651,13 +652,7 @@ async def enabledonor(ctx: discord.ApplicationContext, name: str):
         return
 
     else:
-        try:
-            await asyncio.to_thread(cleaninty_abstractor().refresh_donor_lt_time, name)
-        except SoapCodeError:
-            await ctx.respond(
-                ephemeral=True,
-                content=f"enabling {name} failed!\nthe donor is likely broken, plz fix",
-            )
+        await asyncio.to_thread(cleaninty_abstractor().refresh_donor_lt_time, name)
 
         await ctx.respond(
             ephemeral=True,
@@ -768,18 +763,6 @@ async def on_application_command_error(
         await ctx.respond(
             ephemeral=True,
             content=f"This command is currently on cooldown to avoid double-soaping, please wait {str(error.retry_after)[:4]}s",
-        )
-
-    elif isinstance(error, soap_cat_errors.NoDonors):
-        await ctx.respond(ephemeral=True, content=error.args[0])
-
-    elif isinstance(error, soap_cat_errors.BorkedDonor):
-        the_db().set_donor_lt_time(error.args[1], 3)
-        await ctx.respond(
-            content=f"Uh oh! {error.args[1]} seems to be broken!\nit has been disabled, please try again"
-        )
-        log(
-            f"<@191364692751417344> <@966381737393414144> `{error.args[1]}` is broken! it's been disabled, someone fix it plz"
         )
 
     else:

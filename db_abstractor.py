@@ -2,7 +2,6 @@ import datetime
 from dotenv import load_dotenv
 import mysql.connector
 import os
-import soap_cat_errors
 
 
 class the_db:
@@ -58,7 +57,7 @@ class the_db:
             pass
 
         if result is None:
-            raise soap_cat_errors.NoDonors(message="We're out of donors! See soapcheck")
+            raise Exception("No more available donors, see soapcheck")
 
         return result[0], result[1]
 
@@ -95,7 +94,6 @@ class the_db:
             self.cursor.fetchall()
         except Exception:
             pass
-
 
         self.cursor.execute(
             "UPDATE donors SET last_transferred = %s WHERE name = %s",
