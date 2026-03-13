@@ -94,6 +94,7 @@ async def doasoap(
                 user_id = int(match.group(1))
             except ValueError:
                 user_id = None
+
     await send_soap_status(ctx.interaction.channel.id, "PROGRESS", "START")
 
     if essential_exefs is not None:
@@ -106,7 +107,7 @@ async def doasoap(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to loading the essential failing"
             )
             await send_soap_status(
-                bot, ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LOAD_FAILED"
+                ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LOAD_FAILED"
             )
             return
 
@@ -123,12 +124,22 @@ async def doasoap(
                 + "due to non-200 status code ({request_data.status_code}) when fetching exefs from link"
             )  # split into 2 so it isn't so long
             await send_soap_status(
-                bot, ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LINK_FAILED"
+                ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LINK_FAILED"
             )
             return
 
-        soap_json = generate_json(request_data.content)
-        soap_name = get_json_serial(soap_json).upper()
+        try:
+            soap_json = generate_json(request_data.content)
+            soap_name = get_json_serial(soap_json).upper()
+        except Exception as e:
+            await ctx.respond(ephemeral=True, content=f"Failed to load essential\n{e}")
+            await log(
+                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to loading the essential failing"
+            )
+            await send_soap_status(
+                ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LOAD_FAILED"
+            )
+            return
 
     elif console_json is not None:
         soap_json = await console_json.read()
@@ -138,9 +149,7 @@ async def doasoap(
             await log(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to invalid json"
             )
-            await send_soap_status(
-                bot, ctx.interaction.channel.id, "ERROR", "INVALID_JSON"
-            )
+            await send_soap_status(ctx.interaction.channel.id, "ERROR", "INVALID_JSON")
             return
     else:
         await ctx.respond(
@@ -159,7 +168,7 @@ async def doasoap(
         serial = str(serial).upper()
 
         await send_soap_status(
-            bot, ctx.interaction.channel.id, "PROGRESS", "SERIAL_CHECK_ATTEMPT"
+            ctx.interaction.channel.id, "PROGRESS", "SERIAL_CHECK_ATTEMPT"
         )
 
         if serial == "SKIP":
@@ -174,7 +183,7 @@ async def doasoap(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to invalid serial"
             )
             await send_soap_status(
-                bot, ctx.interaction.channel.id, "ERROR", "INVALID_SERIAL"
+                ctx.interaction.channel.id, "ERROR", "INVALID_SERIAL"
             )
             return
 
@@ -185,7 +194,7 @@ async def doasoap(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to invalid serial"
             )
             await send_soap_status(
-                bot, ctx.interaction.channel.id, "ERROR", "INVALID_SERIAL_LENGTH"
+                ctx.interaction.channel.id, "ERROR", "INVALID_SERIAL_LENGTH"
             )
             return
 
@@ -197,7 +206,7 @@ async def doasoap(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to mismatching serials"
             )
             await send_soap_status(
-                bot, ctx.interaction.channel.id, "ERROR", "SERIAL_MISMATCH"
+                ctx.interaction.channel.id, "ERROR", "SERIAL_MISMATCH"
             )
             return
         else:
@@ -213,7 +222,7 @@ async def doasoap(
     async with soap_lock:
         try:
             await send_soap_status(
-                bot, ctx.interaction.channel.id, "PROGRESS", "CLEANINTY_INIT"
+                ctx.interaction.channel.id, "PROGRESS", "CLEANINTY_INIT"
             )
             dev = SimpleCtrDevice(json_string=soap_json)
             soapMan = CtrSoapManager(dev, False)
@@ -227,7 +236,7 @@ async def doasoap(
 
         soap_json = dev.serialize_json()
         await send_soap_status(
-            bot, ctx.interaction.channel.id, "PROGRESS", "CLEANINTY_INIT_SUCCESS"
+            ctx.interaction.channel.id, "PROGRESS", "CLEANINTY_INIT_SUCCESS"
         )
 
         if json.loads(soap_json)["region"] == "USA":
@@ -241,7 +250,7 @@ async def doasoap(
 
         resultStr += "Attempting eShopRegionChange on source...\n"
         await send_soap_status(
-            bot, ctx.interaction.channel.id, "PROGRESS", "ESHOP_REGION_CHANGE_ATTEMPT"
+            ctx.interaction.channel.id, "PROGRESS", "ESHOP_REGION_CHANGE_ATTEMPT"
         )
         try:
             soap_json, resultStr = await asyncio.to_thread(
@@ -252,9 +261,7 @@ async def doasoap(
                 language=source_language_change,
                 result_string=resultStr,
             )
-            await send_soap_status(
-                bot, user_id, "PROGRESS", "ESHOP_REGION_CHANGE_SUCCESS"
-            )
+            await send_soap_status(user_id, "PROGRESS", "ESHOP_REGION_CHANGE_SUCCESS")
         except SoapCodeError as err:
             if err.soaperrorcode != 602:
                 await log(
@@ -265,13 +272,13 @@ async def doasoap(
             resultStr += "sticky titles are sticking, doing system transfer...\n"
             lottery = False
             await send_soap_status(
-                bot, ctx.interaction.channel.id, "PROGRESS", "SYSTEM_TRANSFER_ATTEMPT"
+                ctx.interaction.channel.id, "PROGRESS", "SYSTEM_TRANSFER_ATTEMPT"
             )
             soap_json, donor_json_name, resultStr = await asyncio.to_thread(
                 cleaninty.do_transfer_with_donor, soap_json, resultStr
             )
             await send_soap_status(
-                bot, ctx.interaction.channel.id, "PROGRESS", "SYSTEM_TRANSFER_SUCCESS"
+                ctx.interaction.channel.id, "PROGRESS", "SYSTEM_TRANSFER_SUCCESS"
             )
 
             resultStr += f" `{donor_json_name}` is now on cooldown\n"
@@ -288,7 +295,7 @@ async def doasoap(
                 result_string=resultStr,
             )
             await send_soap_status(
-                bot, ctx.interaction.channel.id, "PROGRESS", "ESHOP_DELETE_SUCCESS"
+                ctx.interaction.channel.id, "PROGRESS", "ESHOP_DELETE_SUCCESS"
             )
 
         await asyncio.to_thread(helpers.CtrSoapCheckRegister, soapMan)
