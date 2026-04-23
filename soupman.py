@@ -1,3 +1,27 @@
+"""
+MIT License
+
+Copyright (c) 2024 Jade Herd
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
 import asyncio
 import discord
 import json
@@ -8,10 +32,11 @@ from cleaninty.ctr.soap.manager import CtrSoapManager
 from cleaninty.ctr.soap import helpers
 from pyctr.type.exefs import ExeFSReader
 from io import BytesIO, StringIO
+import os
 
 
 class soupman(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: discord.Bot):
         self.bot = bot
 
     @discord.slash_command(description="Generate a consoles soap key (soupman)")
@@ -30,16 +55,18 @@ class soupman(commands.Cog):
         except discord.errors.NotFound:
             return
 
-        print(f"{ctx.author} is generating a json from secinfo and otp...")
+        await self._log(f"{ctx.author} is generating a json from secinfo and otp...")
         secinfo_bytes = BytesIO(await secinfo.read())
         secinfo_bytes.seek(0x100)
         country_byte = secinfo_bytes.read(1)
         secinfo_bytes.close()
 
-        if country_byte == b"\x00":
-            country = "JP"
+        if country_byte == b"\x01":
+            country = "US"
         elif country_byte == b"\x02":
             country = "GB"
+        elif country_byte == b"\x06":
+            country = "TW"
         else:
             country = None
 
@@ -66,12 +93,10 @@ class soupman(commands.Cog):
             retStr += f"Current effective country: {soapMan.country}\n"
             retStr += f"Current effective language: {soapMan.language}\n"
         except Exception as e:
-            await ctx.respond(
-                ephemeral=True, content=f"Cleaninty error:\n```\n{e}\n```"
+            await self._log(
+                f"{ctx.author} has failed to generate a json from secinfo and otp"
             )
-            print(f"Cleaninty: {e}")
-            print(f"{ctx.author} has failed to generate a json from secinfo and otp")
-            return
+            raise e
 
         try:
             await ctx.respond(
@@ -79,11 +104,15 @@ class soupman(commands.Cog):
                 file=discord.File(fp=StringIO(jsonStr), filename="soap.json"),
                 content=f"```\n{retStr}```",
             )
-        except Exception:
+        except Exception as e:
             await ctx.respond(
                 ephemeral=True, content="Failed to respond with soap.json"
             )
-        print(f"{ctx.author} has successfully generated a json from secinfo and otp")
+            raise e
+
+        await self._log(
+            f"{ctx.author} has successfully generated a json from secinfo and otp"
+        )
 
     @discord.slash_command(
         description="Generate a consoles soap key using essential.exefs (soupman)"
@@ -106,7 +135,7 @@ class soupman(commands.Cog):
             await ctx.respond(ephemeral=True, content="Invalid essential")
             return
 
-        print(f"{ctx.author} is generating a json from essential...")
+        await self._log(f"{ctx.author} is generating a json from essential...")
 
         secinfo = reader.open("secinfo")
         secinfo.seek(0x100)
@@ -117,6 +146,8 @@ class soupman(commands.Cog):
             country = "US"
         elif country_byte == b"\x02":
             country = "GB"
+        elif country_byte == b"\x06":
+            country = "TW"
         else:
             country = None
 
@@ -146,7 +177,9 @@ class soupman(commands.Cog):
             await ctx.respond(
                 ephemeral=True, content=f"Cleaninty error:\n```\n{e}\n```"
             )
-            print(f"{ctx.author} has failed to generate a json from essential")
+            await self._log(
+                f"{ctx.author} has failed to generate a json from essential"
+            )
             raise e
 
         try:
@@ -163,7 +196,9 @@ class soupman(commands.Cog):
                 ephemeral=True, content="Failed to respond with soap.json"
             )
             raise
-        print(f"{ctx.author} has successfully generated a json from essential")
+        await self._log(
+            f"{ctx.author} has successfully generated a json from essential"
+        )
 
     @discord.slash_command(description="check console registry (soupman)")
     @discord.option("jsonfile", discord.Attachment, description="soap.json")
@@ -216,7 +251,7 @@ class soupman(commands.Cog):
     async def checkserial(
         self,
         ctx: discord.ApplicationContext,
-        infile: discord.Option(discord.Attachment, "essential.exefs or secinfo"),
+        infile: discord.Attachment,
     ):
         try:
             await ctx.defer(ephemeral=True)
@@ -251,6 +286,10 @@ class soupman(commands.Cog):
             return
 
         await ctx.respond(ephemeral=True, content=f"Serial: {data}")
+
+    async def _log(self, string: str):
+        await self.bot.get_channel(int(os.getenv("LOG_CHANNEL"))).send(content=string)
+        print(string)
 
 
 def setup(bot):
