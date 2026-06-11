@@ -65,12 +65,20 @@ def can_run():
     required=False,
     description="...the .json of the console to soap",
 )
+@discord.option(
+    "maidy",
+    bool,
+    required=False,
+    description="involve maidy in the soap things, defaults to true",
+    default=True,
+)
 async def doasoap(
     ctx: discord.ApplicationContext,
     serial: str,
     essential_exefs: discord.Attachment,
     essential_exefs_link: str,
     console_json: discord.Attachment,
+    maidy: bool,
 ):
     try:
         await ctx.defer(ephemeral=True)
@@ -95,7 +103,7 @@ async def doasoap(
             except ValueError:
                 user_id = None
 
-    await send_soap_status(ctx.interaction.channel.id, "PROGRESS", "START")
+    await send_soap_status(maidy, ctx.interaction.channel.id, "PROGRESS", "START")
 
     if essential_exefs is not None:
         try:
@@ -107,9 +115,9 @@ async def doasoap(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to loading the essential failing"
             )
             await send_soap_status(
-                ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LOAD_FAILED"
+                maidy, ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LOAD_FAILED"
             )
-            return
+            raise e
 
     elif essential_exefs_link is not None:
         request_data = requests.get(essential_exefs_link)
@@ -124,7 +132,7 @@ async def doasoap(
                 + "due to non-200 status code ({request_data.status_code}) when fetching exefs from link"
             )  # split into 2 so it isn't so long
             await send_soap_status(
-                ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LINK_FAILED"
+                maidy, ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LINK_FAILED"
             )
             return
 
@@ -137,9 +145,9 @@ async def doasoap(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to loading the essential failing"
             )
             await send_soap_status(
-                ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LOAD_FAILED"
+                maidy, ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LOAD_FAILED"
             )
-            return
+            raise e
 
     elif console_json is not None:
         soap_json = await console_json.read()
@@ -149,7 +157,9 @@ async def doasoap(
             await log(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to invalid json"
             )
-            await send_soap_status(ctx.interaction.channel.id, "ERROR", "INVALID_JSON")
+            await send_soap_status(
+                maidy, ctx.interaction.channel.id, "ERROR", "INVALID_JSON"
+            )
             return
     else:
         await ctx.respond(
@@ -159,7 +169,7 @@ async def doasoap(
         await log(
             f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to lack of file"
         )
-        await send_soap_status(ctx.interaction.channel.id, "ERROR", "NO_FILE")
+        await send_soap_status(maidy, ctx.interaction.channel.id, "ERROR", "NO_FILE")
         return
 
     if serial is not None:
@@ -168,7 +178,7 @@ async def doasoap(
         serial = str(serial).upper()
 
         await send_soap_status(
-            ctx.interaction.channel.id, "PROGRESS", "SERIAL_CHECK_ATTEMPT"
+            maidy, ctx.interaction.channel.id, "PROGRESS", "SERIAL_CHECK_ATTEMPT"
         )
 
         if serial == "SKIP":
@@ -183,7 +193,7 @@ async def doasoap(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to invalid serial"
             )
             await send_soap_status(
-                ctx.interaction.channel.id, "ERROR", "INVALID_SERIAL"
+                maidy, ctx.interaction.channel.id, "ERROR", "INVALID_SERIAL"
             )
             return
 
@@ -194,7 +204,7 @@ async def doasoap(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to invalid serial"
             )
             await send_soap_status(
-                ctx.interaction.channel.id, "ERROR", "INVALID_SERIAL_LENGTH"
+                maidy, ctx.interaction.channel.id, "ERROR", "INVALID_SERIAL_LENGTH"
             )
             return
 
@@ -206,14 +216,14 @@ async def doasoap(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to mismatching serials"
             )
             await send_soap_status(
-                ctx.interaction.channel.id, "ERROR", "SERIAL_MISMATCH"
+                maidy, ctx.interaction.channel.id, "ERROR", "SERIAL_MISMATCH"
             )
             return
         else:
             resultStr += "secinfo serial and given serial match, continuing\n"
 
     if soap_lock.locked():
-        await send_soap_status(ctx.interaction.channel.id, "PROGRESS", "QUEUED")
+        await send_soap_status(maidy, ctx.interaction.channel.id, "PROGRESS", "QUEUED")
         await ctx.respond(
             ephemeral=True,
             content="Another soap operation is currently being processed, please wait...",
@@ -222,7 +232,7 @@ async def doasoap(
     async with soap_lock:
         try:
             await send_soap_status(
-                ctx.interaction.channel.id, "PROGRESS", "CLEANINTY_INIT"
+                maidy, ctx.interaction.channel.id, "PROGRESS", "CLEANINTY_INIT"
             )
             dev = SimpleCtrDevice(json_string=soap_json)
             soapMan = CtrSoapManager(dev, False)
@@ -236,7 +246,7 @@ async def doasoap(
 
         soap_json = dev.serialize_json()
         await send_soap_status(
-            ctx.interaction.channel.id, "PROGRESS", "CLEANINTY_INIT_SUCCESS"
+            maidy, ctx.interaction.channel.id, "PROGRESS", "CLEANINTY_INIT_SUCCESS"
         )
 
         if json.loads(soap_json)["region"] == "USA":
@@ -250,7 +260,7 @@ async def doasoap(
 
         resultStr += "Attempting eShopRegionChange on source...\n"
         await send_soap_status(
-            ctx.interaction.channel.id, "PROGRESS", "ESHOP_REGION_CHANGE_ATTEMPT"
+            maidy, ctx.interaction.channel.id, "PROGRESS", "ESHOP_REGION_CHANGE_ATTEMPT"
         )
         try:
             soap_json, resultStr = await asyncio.to_thread(
@@ -261,7 +271,9 @@ async def doasoap(
                 language=source_language_change,
                 result_string=resultStr,
             )
-            await send_soap_status(user_id, "PROGRESS", "ESHOP_REGION_CHANGE_SUCCESS")
+            await send_soap_status(
+                maidy, user_id, "PROGRESS", "ESHOP_REGION_CHANGE_SUCCESS"
+            )
         except SoapCodeError as err:
             if err.soaperrorcode != 602:
                 await log(
@@ -272,13 +284,13 @@ async def doasoap(
             resultStr += "sticky titles are sticking, doing system transfer...\n"
             lottery = False
             await send_soap_status(
-                ctx.interaction.channel.id, "PROGRESS", "SYSTEM_TRANSFER_ATTEMPT"
+                maidy, ctx.interaction.channel.id, "PROGRESS", "SYSTEM_TRANSFER_ATTEMPT"
             )
             soap_json, donor_json_name, resultStr = await asyncio.to_thread(
                 cleaninty.do_transfer_with_donor, soap_json, resultStr
             )
             await send_soap_status(
-                ctx.interaction.channel.id, "PROGRESS", "SYSTEM_TRANSFER_SUCCESS"
+                maidy, ctx.interaction.channel.id, "PROGRESS", "SYSTEM_TRANSFER_SUCCESS"
             )
 
             resultStr += f" `{donor_json_name}` is now on cooldown\n"
@@ -295,7 +307,7 @@ async def doasoap(
                 result_string=resultStr,
             )
             await send_soap_status(
-                ctx.interaction.channel.id, "PROGRESS", "ESHOP_DELETE_SUCCESS"
+                maidy, ctx.interaction.channel.id, "PROGRESS", "ESHOP_DELETE_SUCCESS"
             )
 
         await asyncio.to_thread(helpers.CtrSoapCheckRegister, soapMan)
@@ -303,7 +315,7 @@ async def doasoap(
 
     await log(f"soap for {ctx.author.global_name} ({ctx.author.id}) succeeded")
     resultStr += "Done!"
-    await send_soap_status(ctx.interaction.channel.id, "PROGRESS", "SUCCESS")
+    await send_soap_status(maidy, ctx.interaction.channel.id, "PROGRESS", "SUCCESS")
 
     await ctx.respond(
         ephemeral=True,
@@ -336,22 +348,28 @@ async def doasoap(
 
     if lottery:
         # Send SOAP_STATUS message
-        await send_soap_status(ctx.interaction.channel.id, "LOTTERY", serial)
+        await send_soap_status(maidy, ctx.interaction.channel.id, "LOTTERY", serial)
 
     else:
         # Send SOAP_STATUS message
-        await send_soap_status(ctx.interaction.channel.id, "SUCCESS", serial)
+        await send_soap_status(maidy, ctx.interaction.channel.id, "SUCCESS", serial)
 
 
 @bot.slash_command(description="check soap donor availability")
+@discord.option(
+    "count", int, required=False, max_value=25, default=9, description="defaults to 9"
+)
 @can_run()
-async def soapcheck(ctx: discord.ApplicationContext):
+async def soapcheck(ctx: discord.ApplicationContext, count: int):
     try:
         await ctx.defer(ephemeral=True)
     except discord.errors.NotFound:
         return
 
-    donors = the_db().read_donor_table()
+    db = the_db()
+
+    db.cursor.execute("SELECT * FROM donors ORDER BY status DESC, last_transferred ASC")
+    donors = db.cursor.fetchall()
 
     embed = discord.Embed(
         title="SOAP check",
@@ -359,39 +377,41 @@ async def soapcheck(ctx: discord.ApplicationContext):
         color=discord.Color.green(),
     )
 
-    if len(donors) > 9:
-        loopcount = 9
-    else:
-        loopcount = len(donors)
-
     the_time = int(datetime.datetime.now(datetime.UTC).timestamp())
     available_donors = 0
     disabled_donors = 0
     broken_donors = 0
 
-    for i in range(loopcount):
-        if donors[i][2] == 1:
-            embed.add_field(name=donors[i][0], value="Disabled")
+    for i in range((count if len(donors) > count else len(donors))):
+        if donors[i][5] == 1:
+            embed.add_field(name=f"{i + 1}. `{donors[i][0]}`", value="Disabled")
 
-        elif donors[i][2] == 3:
-            embed.add_field(name=donors[i][0], value="Broken")
+        elif donors[i][5] == 3:
+            embed.add_field(name=f"{i + 1}. `{donors[i][0]}`", value="Broken")
 
-        elif (donors[i][2] + 604800) <= the_time:
-            embed.add_field(name=donors[i][0], value="Ready!")
+        elif donors[i][5] == 5:
+            embed.add_field(name=f"{i + 1}. `{donors[i][0]}`", value="In use")
 
-        else:
+        elif (donors[i][2] + 604800) <= the_time and donors[i][5] == 0:
+            embed.add_field(name=f"{i + 1}. `{donors[i][0]}`", value="Ready")
+
+        elif donors[i][5] == 0:
             embed.add_field(
-                name=f"{donors[i][0]}", value=f"Ready <t:{donors[i][2] + 604800}:R>"
+                name=f"{i + 1}. `{donors[i][0]}`",
+                value=f"Ready <t:{donors[i][2] + 604800}:R>",
             )
 
+        else:
+            embed.add_field(name=f"{i + 1}. `{donors[i][0]}`", value="Unknown (??)")
+
     for i in range(len(donors)):
-        if (donors[i][2] + 604800) <= the_time and donors[i][2] > 10:
+        if (donors[i][2] + 604800) <= the_time and donors[i][5] == 0:
             available_donors += 1
 
-        elif donors[i][2] == 1:
+        elif donors[i][5] == 1:
             disabled_donors += 1
 
-        elif donors[i][2] == 3:
+        elif donors[i][5] == 3:
             broken_donors += 1
 
     embed.set_footer(
@@ -410,6 +430,7 @@ async def soapcheck(ctx: discord.ApplicationContext):
     str,
     required=False,
     description="any notes you want attached to the donor",
+    max_length=128,
 )
 @discord.option(
     "name",
@@ -479,12 +500,6 @@ async def uploaddonortodb(
         )
         return
 
-    if len((note if note else "this is filler text")) > 128:
-        await ctx.respond(
-            ephemeral=True, content="note too long! max is 128 characters"
-        )
-        return
-
     db = the_db()
     cleaninty = cleaninty_abstractor()
 
@@ -541,6 +556,7 @@ async def uploaddonortodb(
             last_transferred=cleaninty.get_last_moved_time(donor_json),
             uploader=ctx.author.id,
             note=note,
+            status=0,
         )
 
     await ctx.respond(
@@ -573,26 +589,19 @@ async def donorinfo(ctx: discord.ApplicationContext, name: str):
 
     embed.add_field(name="Uploader:", value=f"{uploader.name} ({uploader.id})")
     embed.add_field(name="Note:", value=donor[4])
-    if donor[2] > 10:
-        embed.add_field(name="Last transfer time:", value=f"<t:{donor[2]}:f>")
-    else:
-        embed.add_field(
-            name="Last transfer time:", value="Donor must be enabled to get lt"
-        )
+    embed.add_field(name="Last transfer time:", value=f"<t:{donor[2]}:f>")
 
-    match donor[2]:
+    match donor[5]:
         case 0:
-            embed.add_field(
-                name="Status:", value="0, this should not be possible"
-            )  # "Being prepared for soaping"
+            embed.add_field(name="Status:", value="Healthy and enabled")
         case 1:
             embed.add_field(name="Status:", value="Manually disabled")
-        case 2:
-            embed.add_field(name="Status:", value="2, this should not be possible")
         case 3:
             embed.add_field(name="Status:", value="Automatically disabled due to error")
         case _:
-            embed.add_field(name="Status:", value="Healthy and enabled")
+            embed.add_field(
+                name="Status:", value=f"{donor[5]}, this should not be possible"
+            )
 
     await ctx.respond(ephemeral=True, embed=embed)
 
@@ -648,12 +657,12 @@ async def disabledonor(ctx: discord.ApplicationContext, name: str):
         await ctx.respond(ephemeral=True, content=f"The donor `{name}` does not exist!")
         return
 
-    elif donor[2] in [1, 3]:
+    elif donor[5] in [1, 3]:
         await ctx.respond(ephemeral=True, content="This donor is already disabled")
         return
 
     else:
-        await asyncio.to_thread(db.set_donor_lt_time, name, 1)
+        await asyncio.to_thread(db.set_donor_status, name, 1)
         await ctx.respond(
             ephemeral=True,
             content=f"`{name}` is now disabled\nuse enabledonor to re-enable it if wanted",
@@ -677,12 +686,12 @@ async def enabledonor(ctx: discord.ApplicationContext, name: str):
         await ctx.respond(ephemeral=True, content=f"The donor `{name}` does not exist!")
         return
 
-    elif donor[2] not in [1, 3]:
+    elif donor[5] not in [1, 3]:
         await ctx.respond(ephemeral=True, content="This donor is not disabled")
         return
 
     else:
-        await asyncio.to_thread(cleaninty_abstractor().refresh_donor_lt_time, name)
+        await asyncio.to_thread(db.set_donor_status, name, 0)
 
         await ctx.respond(
             ephemeral=True,
@@ -696,7 +705,11 @@ async def log(string: str):
     print(string)
 
 
-async def send_soap_status(channel_id, status, error_type=None, serial=None):
+async def send_soap_status(
+    enable: bool, channel_id, status, error_type=None, serial=None
+):
+    if not enable:
+        return
     bots_only_channel = os.getenv("BOTS_ONLY_CHANNEL")
     if not bots_only_channel:
         await log("BOTS_ONLY_CHANNEL not set, skipping SOAP_STATUS message")
@@ -729,13 +742,11 @@ def donorcheck(input_json: str) -> bool:
 
 
 def generate_json(essential) -> str:  # thanks soupman
-    try:
-        reader = ExeFSReader(BytesIO(essential))
-    except Exception:
-        raise Exception("Failed to read essential")
+
+    reader = ExeFSReader(BytesIO(essential))
 
     if not "secinfo" and "otp" in reader.entries:
-        raise Exception("Invalid essential")
+        raise Exception("Essential missing secinfo and/or otp")
 
     secinfo = reader.open("secinfo")
     secinfo.seek(0x100)
@@ -750,14 +761,11 @@ def generate_json(essential) -> str:  # thanks soupman
     else:
         country = None
 
-    try:
-        generated_json = SimpleCtrDevice.generate_new_json(
-            otp_data=reader.open("otp").read(),
-            secureinfo_data=reader.open("secinfo").read(),
-            country=country,
-        )
-    except Exception as e:
-        raise Exception(f"Cleaninty error:\n```\n{e}\n```")
+    generated_json = SimpleCtrDevice.generate_new_json(
+        otp_data=reader.open("otp").read(),
+        secureinfo_data=reader.open("secinfo").read(),
+        country=country,
+    )
 
     return generated_json
 
@@ -801,7 +809,15 @@ async def on_application_command_error(
         )
 
         if str(ctx.command) == "doasoap":
-            await send_soap_status(ctx.interaction.channel.id, "ERROR", "UNKNOWN")
+            for dict in ctx.selected_options:
+                if dict["name"] == "maidy":
+                    maidy = dict["value"]
+                    break
+                else:
+                    maidy = True
+            await send_soap_status(
+                maidy, ctx.interaction.channel.id, "ERROR", "UNKNOWN"
+            )
 
         await ctx.respond(ephemeral=True, content=f"Debug info:\n{error}")
         raise error

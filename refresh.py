@@ -4,14 +4,11 @@ from cleaninty_abstractor import cleaninty_abstractor
 cleaninty = cleaninty_abstractor()
 myDB = the_db()
 
-donors = the_db().read_donor_table()
+myDB.cursor.execute("SELECT * FROM donors ORDER BY last_transferred ASC")
+donors = myDB.cursor.fetchall()
 
 for i in range(len(donors)):
-    if donors[i][2] <= 10:
-        print(f"not refreshing {donors[i][0]}")
-        continue
-    else:
-        print(f"refreshing {donors[i][0]}")
-        cleaninty.refresh_donor_lt_time(donors[i][0])
+    print(f"refreshing {donors[i][0]}")
+    cleaninty.refresh_donor_lt_time(donors[i][0])
 
 myDB.exit()

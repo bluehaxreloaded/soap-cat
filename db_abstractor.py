@@ -21,10 +21,10 @@ class the_db:
         self.cursor.close()
 
     def write_donor(
-        self, name: str, json: str, last_transferred: int, uploader: str, note: str
+        self, name: str, json: str, last_transferred: int, uploader: str, note: str, status:int
     ) -> None:
-        sql = "INSERT INTO donors (name, json_data, last_transferred, uploader, note) VALUES (%s, %s, %s, %s, %s)"
-        val = (name, json, last_transferred, uploader, note)
+        sql = "INSERT INTO donors (name, json_data, last_transferred, uploader, note, status) VALUES (%s, %s, %s, %s, %s, %s)"
+        val = (name, json, last_transferred, uploader, note, status)
 
         self.cursor.execute(sql, val)
 
@@ -46,7 +46,7 @@ class the_db:
             pass
 
         self.cursor.execute(
-            "SELECT * FROM donors WHERE last_transferred BETWEEN 11 AND %s ORDER BY last_transferred ASC",
+            "SELECT * FROM donors WHERE last_transferred < %s AND status = 0 ORDER BY last_transferred ASC",
             (utc_time_ready_for_transfer,),
         )
         result = self.cursor.fetchone()
@@ -88,7 +88,7 @@ class the_db:
 
         return self.cursor.fetchall()
 
-    def set_donor_lt_time(self, name: str, last_transferred: int) -> None:
+    def set_donor_status(self, name: str, status: int) -> None:
         # is this needed?
         try:
             self.cursor.fetchall()
@@ -96,7 +96,7 @@ class the_db:
             pass
 
         self.cursor.execute(
-            "UPDATE donors SET last_transferred = %s WHERE name = %s",
-            (last_transferred, name),
+            "UPDATE donors SET status = %s WHERE name = %s",
+            (status, name),
         )
         self.connection.commit()

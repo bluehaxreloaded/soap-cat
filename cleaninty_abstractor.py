@@ -134,6 +134,7 @@ class cleaninty_abstractor:
         source_json_object = json.loads(source_json)
         donor_json_name, donor_json = myDB.get_donor_json_ready_for_transfer()
 
+        myDB.set_donor_status(donor_json_name, 5)
 
         dev = SimpleCtrDevice(json_string=donor_json)
         soapMan = CtrSoapManager(dev, False)
@@ -157,6 +158,8 @@ class cleaninty_abstractor:
         donor_json = self.clean_json(donor_json)
         myDB.update_donor(donor_json_name, donor_json)
         self.refresh_donor_lt_time(donor_json_name)
+
+        myDB.set_donor_status(donor_json_name, 0)
 
         return source_json, donor_json_name, resultStr
 
