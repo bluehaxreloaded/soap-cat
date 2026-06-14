@@ -598,6 +598,8 @@ async def donorinfo(ctx: discord.ApplicationContext, name: str):
             embed.add_field(name="Status:", value="Manually disabled")
         case 3:
             embed.add_field(name="Status:", value="Automatically disabled due to error")
+        case 5:
+            embed.add_field(name="Status:", value="In use")
         case _:
             embed.add_field(
                 name="Status:", value=f"{donor[5]}, this should not be possible"
