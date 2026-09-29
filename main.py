@@ -71,7 +71,7 @@ def can_run():
     "essential_exefs",
     discord.Attachment,
     required=False,
-    description="...the essential.exefs of the console to soap",
+    description="...the essential.exefs of the console to soap, uses the one maidy saved if left blank",
 )
 @discord.option(
     "essential_exefs_link",
@@ -172,10 +172,29 @@ async def doasoap(
                 maidy, ctx.interaction.channel.id, "ERROR", "INVALID_JSON"
             )
             return
+    # Nothing given, so use the essential.exefs maidy saved for this channel if there is one
+    elif (stored := read_stored_essential(ctx.interaction.channel.id, user_id)) is not None:
+        try:
+            soap_json = generate_json(stored)
+            soap_name = get_json_serial(soap_json).upper()
+        except Exception as e:
+            await ctx.respond(ephemeral=True, content=f"Failed to load essential\n{e}")
+            await log(
+                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to loading the essential failing"
+            )
+            await send_soap_status(
+                maidy, ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LOAD_FAILED"
+            )
+            raise e
+        await log(
+            f"soap for {ctx.author.global_name} ({ctx.author.id}) is using the essential maidy saved for this channel"
+        )
+
     else:
         await ctx.respond(
             ephemeral=True,
-            content="uh... what? you didn't send a .json, .exefs, or link to .exefs, try again",
+            content="uh... what? you didn't send a .json, .exefs, or link to .exefs, "
+            + "and maidy doesn't have one saved for this channel, try again",
         )
         await log(
             f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to lack of file"
@@ -847,7 +866,10 @@ async def read_essential_ref(
 ) -> bytes:
     """Get the essential.exefs a SOAP_REQUEST points to, see soap_request for the formats."""
     if ref.upper() == "STORED":
-        return read_stored_essential(channel.id, user_id)
+        stored = read_stored_essential(channel.id, user_id)
+        if stored is None:
+            raise Exception(f"No stored essential for user {user_id} in channel {channel.id}")
+        return stored
 
     elif ref.upper() == "ATTACHED":
         attachments = message.attachments
@@ -873,14 +895,21 @@ async def read_essential_ref(
     raise Exception("No .exefs attached")
 
 
-def read_stored_essential(channel_id: int, user_id: int) -> bytes:
-    """The essential.exefs maidy stored for this helpee's soap channel.
-    maidy names each file after both, so it's only found for the helpee it belongs to."""
-    path = ESSENTIALS_DIR / f"{int(channel_id)}-{int(user_id)}.exefs"
+def read_stored_essential(channel_id: int, user_id: int | None) -> bytes | None:
+    """The essential.exefs maidy stored for this helpee's soap channel, or None if there isn't one.
+    maidy names each file after both, so it's only found for the helpee it belongs to.
+    user_id is None for a channel with no helpee in its topic (e.g. testing), where maidy lets anyone upload."""
+    if user_id is None:
+        files = sorted(ESSENTIALS_DIR.glob(f"{int(channel_id)}-*.exefs"))
+        if not files:
+            return None
+        path = files[0]
+    else:
+        path = ESSENTIALS_DIR / f"{int(channel_id)}-{int(user_id)}.exefs"
     try:
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     except FileNotFoundError:
-        raise Exception(f"No stored essential for user {user_id} in channel {channel_id}")
+        return None
     with os.fdopen(fd, "rb") as f:
         data = f.read(MAX_ESSENTIAL_SIZE + 1)
     if len(data) > MAX_ESSENTIAL_SIZE:
