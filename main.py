@@ -39,6 +39,8 @@ MESSAGE_LINK_RE = re.compile(
     r"^https://(?:\w+\.)?discord(?:app)?\.com/channels/\d+/(\d+)/(\d+)$"
 )
 DISCORD_CDN_HOSTS = ["cdn.discordapp.com", "media.discordapp.net"]
+SERIAL_RECEIVED_TITLE = "✅ Serial number received"  # maidy's message with the serial the helpee entered
+SERIAL_RE = re.compile(r"\b([A-Z]{2,3}\d{8,9})\b")
 # Where maidy stores helpees' essential.exefs files, one per soap channel (same server and user as maidy)
 ESSENTIALS_DIR = Path(os.getenv("ESSENTIALS_DIR") or "~/essentials").expanduser()
 MAX_ESSENTIAL_SIZE = 0x4000
@@ -64,7 +66,8 @@ def can_run():
 @discord.option(
     "serial",
     str,
-    description="the serial on the sticker, use 'skip' to skip the check (only skip if u smart)",
+    required=False,
+    description="the serial on the sticker, uses the one the helpee gave maidy if blank, 'skip' to skip the check",
     max_length=12,
 )
 @discord.option(
@@ -113,6 +116,22 @@ async def doasoap(
     # Extract channel and user_id
     channel = bot.get_channel(ctx.channel_id)
     user_id = user_id_from_topic(getattr(channel, "topic", None))
+
+    # No serial given, so use the one the helpee entered with maidy
+    if serial is None:
+        serial = await entered_serial(ctx.interaction.channel)
+        if serial is None:
+            await ctx.respond(
+                ephemeral=True,
+                content="no serial given and maidy doesn't have one for this channel, give the serial and try again",
+            )
+            await log(
+                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to no serial"
+            )
+            return
+        await log(
+            f"soap for {ctx.author.global_name} ({ctx.author.id}) is using the serial maidy has for this channel ({serial})"
+        )
 
     await send_soap_status(maidy, ctx.interaction.channel.id, "PROGRESS", "START")
 
@@ -893,6 +912,16 @@ async def read_essential_ref(
         if attachment.filename.lower().endswith(".exefs"):
             return await attachment.read()
     raise Exception("No .exefs attached")
+
+
+async def entered_serial(channel: discord.TextChannel) -> str | None:
+    """The serial the helpee entered with maidy, from its latest "Serial number received" message."""
+    async for message in channel.history(limit=100):
+        if message.author.bot and message.embeds and message.embeds[0].title == SERIAL_RECEIVED_TITLE:
+            match = SERIAL_RE.search(message.embeds[0].description or "")
+            if match:
+                return match.group(1)
+    return None
 
 
 def read_stored_essential(channel_id: int, user_id: int | None) -> bytes | None:
