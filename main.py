@@ -129,9 +129,6 @@ async def doasoap(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to no serial"
             )
             return
-        await log(
-            f"soap for {ctx.author.global_name} ({ctx.author.id}) is using the serial maidy has for this channel ({serial})"
-        )
 
     await send_soap_status(maidy, ctx.interaction.channel.id, "PROGRESS", "START")
 
@@ -205,9 +202,6 @@ async def doasoap(
                 maidy, ctx.interaction.channel.id, "ERROR", "ESSENTIAL_LOAD_FAILED"
             )
             raise e
-        await log(
-            f"soap for {ctx.author.global_name} ({ctx.author.id}) is using the essential maidy saved for this channel"
-        )
 
     else:
         await ctx.respond(
