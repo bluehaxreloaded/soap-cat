@@ -1,10 +1,12 @@
 import asyncio
 import datetime
 import discord
+import hashlib
 import json
 import re
 import os
 import requests
+import time
 from base64 import b64decode
 from cleaninty.ctr.simpledevice import SimpleCtrDevice
 from cleaninty.ctr.soap.manager import CtrSoapManager
@@ -16,6 +18,7 @@ from cleaninty_abstractor import cleaninty_abstractor
 from cleaninty.nintendowifi.soapenvelopebase import SoapCodeError
 from io import BytesIO, StringIO
 from pyctr.type.exefs import ExeFSReader
+from pathlib import Path
 from urllib.parse import urlparse
 
 
@@ -26,6 +29,8 @@ log_channel = None
 load_dotenv()
 soap_lock = asyncio.Lock()
 active_requests: set[int] = set()  # user ids with a SOAP_REQUEST running
+SOAP_REQUEST_COOLDOWN = 15  # seconds before a request for the same essential is accepted again
+recent_essentials: dict[str, float] = {}  # essential hash -> when a request for it last came in
 
 SOAP_REQUEST_RE = re.compile(
     r"^SOAP_REQUEST\s+(\d{15,25})\s+(\S+)\s+(\S+)\s*$", re.IGNORECASE
@@ -34,6 +39,9 @@ MESSAGE_LINK_RE = re.compile(
     r"^https://(?:\w+\.)?discord(?:app)?\.com/channels/\d+/(\d+)/(\d+)$"
 )
 DISCORD_CDN_HOSTS = ["cdn.discordapp.com", "media.discordapp.net"]
+# Where maidy stores helpees' essential.exefs files, one per soap channel (same server and user as maidy)
+ESSENTIALS_DIR = Path(os.getenv("ESSENTIALS_DIR") or "~/essentials").expanduser()
+MAX_ESSENTIAL_SIZE = 0x4000
 
 
 def can_run():
@@ -192,6 +200,7 @@ async def doasoap(
 async def soap_request(message: discord.Message):
     """SOAP_REQUEST <USERID> <SERIAL> <ESSENTIALS>, sent by maidy in the bots only channel.
     ESSENTIALS is one of:
+    - STORED, to use the essential.exefs maidy saved for this helpee in their soap channel
     - a link to a message with the essential.exefs attached (e.g. maidy's "essential.exefs received" message)
     - ATTACHED, with the essential.exefs attached to the SOAP_REQUEST message itself
     - a cdn.discordapp.com link to the essential.exefs
@@ -225,11 +234,26 @@ async def soap_request(message: discord.Message):
 
     who = f"user {user_id} (SOAP_REQUEST from {message.author.name})"
     try:
+        try:
+            essential = await read_essential_ref(message, essentials, channel, user_id)
+        except Exception as e:
+            await log(f"soap for {who} failed due to loading the essential failing\n{e}")
+            await send_soap_status(True, channel.id, "ERROR", "ESSENTIAL_LOAD_FAILED")
+            return
+
+        # Cancel duplicates of a request for the same essential that came in just before
+        essential_hash = hashlib.sha256(essential).hexdigest()
+        now = time.monotonic()
+        if now - recent_essentials.get(essential_hash, 0) < SOAP_REQUEST_COOLDOWN:
+            await log(f"ignoring duplicate SOAP_REQUEST for {who}")
+            return
+        recent_essentials[essential_hash] = now
+
         await log(f"doing soap for {who} in {channel.jump_url} ({channel.name})")
         await send_soap_status(True, channel.id, "PROGRESS", "START")
 
         try:
-            soap_json = generate_json(await read_essential_ref(message, essentials))
+            soap_json = generate_json(essential)
             soap_name = get_json_serial(soap_json).upper()
         except Exception as e:
             await log(f"soap for {who} failed due to loading the essential failing\n{e}")
@@ -238,7 +262,8 @@ async def soap_request(message: discord.Message):
 
         try:
             await perform_soap(
-                respond=message.reply,
+                # Only the result text goes back, the console .json isn't needed and shouldn't sit in the channel
+                respond=lambda content, file=None: message.reply(content=content),
                 who=who,
                 channel_id=channel.id,
                 user_id=user_id,
@@ -817,9 +842,14 @@ def find_soap_channel(guild: discord.Guild, user_id: int) -> discord.TextChannel
     return None
 
 
-async def read_essential_ref(message: discord.Message, ref: str) -> bytes:
+async def read_essential_ref(
+    message: discord.Message, ref: str, channel: discord.TextChannel, user_id: int
+) -> bytes:
     """Get the essential.exefs a SOAP_REQUEST points to, see soap_request for the formats."""
-    if ref.upper() == "ATTACHED":
+    if ref.upper() == "STORED":
+        return read_stored_essential(channel.id, user_id)
+
+    elif ref.upper() == "ATTACHED":
         attachments = message.attachments
 
     elif match := MESSAGE_LINK_RE.match(ref):
@@ -841,6 +871,21 @@ async def read_essential_ref(message: discord.Message, ref: str) -> bytes:
         if attachment.filename.lower().endswith(".exefs"):
             return await attachment.read()
     raise Exception("No .exefs attached")
+
+
+def read_stored_essential(channel_id: int, user_id: int) -> bytes:
+    """The essential.exefs maidy stored for this helpee's soap channel.
+    maidy names each file after both, so it's only found for the helpee it belongs to."""
+    path = ESSENTIALS_DIR / f"{int(channel_id)}-{int(user_id)}.exefs"
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        raise Exception(f"No stored essential for user {user_id} in channel {channel_id}")
+    with os.fdopen(fd, "rb") as f:
+        data = f.read(MAX_ESSENTIAL_SIZE + 1)
+    if len(data) > MAX_ESSENTIAL_SIZE:
+        raise Exception("Stored essential is too big")
+    return data
 
 
 def donorcheck(input_json: str) -> bool:
