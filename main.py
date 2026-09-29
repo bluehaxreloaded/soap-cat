@@ -16,12 +16,24 @@ from cleaninty_abstractor import cleaninty_abstractor
 from cleaninty.nintendowifi.soapenvelopebase import SoapCodeError
 from io import BytesIO, StringIO
 from pyctr.type.exefs import ExeFSReader
+from urllib.parse import urlparse
 
 
-bot = discord.Bot()
+intents = discord.Intents.default()
+intents.message_content = True  # to read SOAP_REQUEST messages from maidy
+bot = discord.Bot(intents=intents)
 log_channel = None
 load_dotenv()
 soap_lock = asyncio.Lock()
+active_requests: set[int] = set()  # user ids with a SOAP_REQUEST running
+
+SOAP_REQUEST_RE = re.compile(
+    r"^SOAP_REQUEST\s+(\d{15,25})\s+(\S+)\s+(\S+)\s*$", re.IGNORECASE
+)
+MESSAGE_LINK_RE = re.compile(
+    r"^https://(?:\w+\.)?discord(?:app)?\.com/channels/\d+/(\d+)/(\d+)$"
+)
+DISCORD_CDN_HOSTS = ["cdn.discordapp.com", "media.discordapp.net"]
 
 
 def can_run():
@@ -89,19 +101,10 @@ async def doasoap(
         f"doing soap for {ctx.author.global_name} ({ctx.author.id}) in {ctx.interaction.channel.jump_url}"
         + f" ({ctx.interaction.channel.name})"
     )
-    resultStr = str("")
 
     # Extract channel and user_id
     channel = bot.get_channel(ctx.channel_id)
-    topic = getattr(channel, "topic", None)
-    user_id = None
-    if topic:
-        match = re.search(r"<@!?(\d+)>", topic)
-        if match:
-            try:
-                user_id = int(match.group(1))
-            except ValueError:
-                user_id = None
+    user_id = user_id_from_topic(getattr(channel, "topic", None))
 
     await send_soap_status(maidy, ctx.interaction.channel.id, "PROGRESS", "START")
 
@@ -153,7 +156,7 @@ async def doasoap(
         soap_json = await console_json.read()
         soap_name = console_json.filename[:-5]
         if not donorcheck(soap_json):
-            ctx.respond(ephemeral=True, content="Failed to verify json")
+            await ctx.respond(ephemeral=True, content="Failed to verify json")
             await log(
                 f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to invalid json"
             )
@@ -172,14 +175,107 @@ async def doasoap(
         await send_soap_status(maidy, ctx.interaction.channel.id, "ERROR", "NO_FILE")
         return
 
+    await perform_soap(
+        respond=lambda **kwargs: ctx.respond(ephemeral=True, **kwargs),
+        who=f"{ctx.author.global_name} ({ctx.author.id})",
+        channel_id=ctx.interaction.channel.id,
+        user_id=user_id,
+        guild=ctx.guild,
+        soap_json=soap_json,
+        soap_name=soap_name,
+        serial=serial,
+        maidy=maidy,
+    )
+
+
+@bot.listen("on_message")
+async def soap_request(message: discord.Message):
+    """SOAP_REQUEST <USERID> <SERIAL> <ESSENTIALS>, sent by maidy in the bots only channel.
+    ESSENTIALS is one of:
+    - a link to a message with the essential.exefs attached (e.g. maidy's "essential.exefs received" message)
+    - ATTACHED, with the essential.exefs attached to the SOAP_REQUEST message itself
+    - a cdn.discordapp.com link to the essential.exefs
+    """
+    bots_only_channel = os.getenv("BOTS_ONLY_CHANNEL")
+    if (
+        not bots_only_channel
+        or message.channel.id != int(bots_only_channel)
+        or not message.author.bot
+        or message.author.id == bot.user.id
+    ):
+        return
+
+    match = SOAP_REQUEST_RE.match((message.content or "").strip())
+    if not match:
+        return
+    user_id = int(match.group(1))
+    serial = match.group(2)
+    essentials = match.group(3)
+
+    channel = find_soap_channel(message.guild, user_id)
+    if channel is None:
+        await log(f"SOAP_REQUEST for user {user_id} failed, no soap channel found for them")
+        await message.reply(f"SOAP_REQUEST {user_id} [WARN: CHANNEL NOT FOUND]")
+        return
+
+    if user_id in active_requests:
+        await log(f"ignoring SOAP_REQUEST for user {user_id}, one is already running")
+        return
+    active_requests.add(user_id)
+
+    who = f"user {user_id} (SOAP_REQUEST from {message.author.name})"
+    try:
+        await log(f"doing soap for {who} in {channel.jump_url} ({channel.name})")
+        await send_soap_status(True, channel.id, "PROGRESS", "START")
+
+        try:
+            soap_json = generate_json(await read_essential_ref(message, essentials))
+            soap_name = get_json_serial(soap_json).upper()
+        except Exception as e:
+            await log(f"soap for {who} failed due to loading the essential failing\n{e}")
+            await send_soap_status(True, channel.id, "ERROR", "ESSENTIAL_LOAD_FAILED")
+            return
+
+        try:
+            await perform_soap(
+                respond=message.reply,
+                who=who,
+                channel_id=channel.id,
+                user_id=user_id,
+                guild=message.guild,
+                soap_json=soap_json,
+                soap_name=soap_name,
+                serial=serial,
+                maidy=True,
+            )
+        except Exception as e:
+            await log(f"soap for {who} failed with an error\n{e}")
+            await send_soap_status(True, channel.id, "ERROR", "UNKNOWN")
+            raise e
+    finally:
+        active_requests.discard(user_id)
+
+
+async def perform_soap(
+    respond,
+    who: str,
+    channel_id: int,
+    user_id: int | None,
+    guild: discord.Guild,
+    soap_json: str,
+    soap_name: str,
+    serial: str,
+    maidy: bool,
+):
+    """The soap itself, shared by /doasoap and SOAP_REQUEST. respond sends content/file back to whoever asked."""
+    resultStr = str("")
+
     if serial is not None:
         # .upper() is just for consistency
         soap_serial = get_json_serial(soap_json).upper()
         serial = str(serial).upper()
 
-        await send_soap_status(
-            maidy, ctx.interaction.channel.id, "PROGRESS", "SERIAL_CHECK_ATTEMPT"
-        )
+        await send_soap_status(maidy, channel_id, "PROGRESS", "SERIAL_CHECK_ATTEMPT")
 
         if serial == "SKIP":
             resultStr += "skipping serial check\n"
@@ -188,66 +284,47 @@ async def doasoap(
             resultStr += f"{serial[0]} is not a valid console digit" + (
                 "(nice aliexpress serial)" if serial[0] == "U" else ""
             )
-            await ctx.respond(ephemeral=True, content=resultStr)
-            await log(
-                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to invalid serial"
-            )
-            await send_soap_status(
-                maidy, ctx.interaction.channel.id, "ERROR", "INVALID_SERIAL"
-            )
+            await respond(content=resultStr)
+            await log(f"soap for {who} failed due to invalid serial")
+            await send_soap_status(maidy, channel_id, "ERROR", "INVALID_SERIAL")
             return
 
         elif len(serial) not in [10, 11, 12]:
             resultStr += f"invalid serial length, must be 10-12 characters long instead of {len(serial)}"
-            await ctx.respond(ephemeral=True, content=resultStr)
-            await log(
-                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to invalid serial"
-            )
-            await send_soap_status(
-                maidy, ctx.interaction.channel.id, "ERROR", "INVALID_SERIAL_LENGTH"
-            )
+            await respond(content=resultStr)
+            await log(f"soap for {who} failed due to invalid serial")
+            await send_soap_status(maidy, channel_id, "ERROR", "INVALID_SERIAL_LENGTH")
             return
 
         elif serial[: len(soap_serial)] != soap_serial:
             resultStr += f"secinfo serial and given serial do not match!\nsecinfo: {soap_serial}\ngiven: {serial[: len(soap_serial)]}\n"
             resultStr += "nothing has been done to any donors or the soapee"
-            await ctx.respond(ephemeral=True, content=resultStr)
-            await log(
-                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to mismatching serials"
-            )
-            await send_soap_status(
-                maidy, ctx.interaction.channel.id, "ERROR", "SERIAL_MISMATCH"
-            )
+            await respond(content=resultStr)
+            await log(f"soap for {who} failed due to mismatching serials")
+            await send_soap_status(maidy, channel_id, "ERROR", "SERIAL_MISMATCH")
             return
         else:
             resultStr += "secinfo serial and given serial match, continuing\n"
 
     if soap_lock.locked():
-        await send_soap_status(maidy, ctx.interaction.channel.id, "PROGRESS", "QUEUED")
-        await ctx.respond(
-            ephemeral=True,
+        await send_soap_status(maidy, channel_id, "PROGRESS", "QUEUED")
+        await respond(
             content="Another soap operation is currently being processed, please wait...",
         )
 
     async with soap_lock:
         try:
-            await send_soap_status(
-                maidy, ctx.interaction.channel.id, "PROGRESS", "CLEANINTY_INIT"
-            )
+            await send_soap_status(maidy, channel_id, "PROGRESS", "CLEANINTY_INIT")
             dev = SimpleCtrDevice(json_string=soap_json)
             soapMan = CtrSoapManager(dev, False)
             await asyncio.to_thread(helpers.CtrSoapCheckRegister, soapMan)
             cleaninty = cleaninty_abstractor()
         except Exception as e:
-            await log(
-                f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to a cleaninty error"
-            )
+            await log(f"soap for {who} failed due to a cleaninty error")
             raise e
 
         soap_json = dev.serialize_json()
-        await send_soap_status(
-            maidy, ctx.interaction.channel.id, "PROGRESS", "CLEANINTY_INIT_SUCCESS"
-        )
+        await send_soap_status(maidy, channel_id, "PROGRESS", "CLEANINTY_INIT_SUCCESS")
 
         if json.loads(soap_json)["region"] == "USA":
             source_region_change = "JPN"
@@ -260,7 +337,7 @@ async def doasoap(
 
         resultStr += "Attempting eShopRegionChange on source...\n"
         await send_soap_status(
-            maidy, ctx.interaction.channel.id, "PROGRESS", "ESHOP_REGION_CHANGE_ATTEMPT"
+            maidy, channel_id, "PROGRESS", "ESHOP_REGION_CHANGE_ATTEMPT"
         )
         try:
             soap_json, resultStr = await asyncio.to_thread(
@@ -272,25 +349,25 @@ async def doasoap(
                 result_string=resultStr,
             )
             await send_soap_status(
-                maidy, user_id, "PROGRESS", "ESHOP_REGION_CHANGE_SUCCESS"
+                maidy, channel_id, "PROGRESS", "ESHOP_REGION_CHANGE_SUCCESS"
             )
         except SoapCodeError as err:
             if err.soaperrorcode != 602:
                 await log(
-                    f"soap for {ctx.author.global_name} ({ctx.author.id}) failed due to non-602 soap error code (wtf)"
+                    f"soap for {who} failed due to non-602 soap error code (wtf)"
                 )
                 raise err
 
             resultStr += "sticky titles are sticking, doing system transfer...\n"
             lottery = False
             await send_soap_status(
-                maidy, ctx.interaction.channel.id, "PROGRESS", "SYSTEM_TRANSFER_ATTEMPT"
+                maidy, channel_id, "PROGRESS", "SYSTEM_TRANSFER_ATTEMPT"
             )
             soap_json, donor_json_name, resultStr = await asyncio.to_thread(
                 cleaninty.do_transfer_with_donor, soap_json, resultStr
             )
             await send_soap_status(
-                maidy, ctx.interaction.channel.id, "PROGRESS", "SYSTEM_TRANSFER_SUCCESS"
+                maidy, channel_id, "PROGRESS", "SYSTEM_TRANSFER_SUCCESS"
             )
 
             resultStr += f" `{donor_json_name}` is now on cooldown\n"
@@ -307,29 +384,28 @@ async def doasoap(
                 result_string=resultStr,
             )
             await send_soap_status(
-                maidy, ctx.interaction.channel.id, "PROGRESS", "ESHOP_DELETE_SUCCESS"
+                maidy, channel_id, "PROGRESS", "ESHOP_DELETE_SUCCESS"
             )
 
         await asyncio.to_thread(helpers.CtrSoapCheckRegister, soapMan)
         soap_json = cleaninty.clean_json(soap_json)
 
-    await log(f"soap for {ctx.author.global_name} ({ctx.author.id}) succeeded")
+    await log(f"soap for {who} succeeded")
     resultStr += "Done!"
-    await send_soap_status(maidy, ctx.interaction.channel.id, "PROGRESS", "SUCCESS")
+    await send_soap_status(maidy, channel_id, "PROGRESS", "SUCCESS")
 
-    await ctx.respond(
-        ephemeral=True,
+    await respond(
         content=resultStr,
         file=discord.File(fp=StringIO(soap_json), filename=f"{soap_name}.json"),
     )
 
     # Try to get member (only if user_id was found)
     if user_id is not None:
-        member_obj = ctx.guild.get_member(user_id)
+        member_obj = guild.get_member(user_id)
         # Fallback to fetching from API
         if not member_obj:
             try:
-                member_obj = await ctx.guild.fetch_member(user_id)
+                member_obj = await guild.fetch_member(user_id)
             except (discord.NotFound, discord.Forbidden):
                 member_obj = None
     else:
@@ -348,11 +424,11 @@ async def doasoap(
 
     if lottery:
         # Send SOAP_STATUS message
-        await send_soap_status(maidy, ctx.interaction.channel.id, "LOTTERY", serial)
+        await send_soap_status(maidy, channel_id, "LOTTERY", serial)
 
     else:
         # Send SOAP_STATUS message
-        await send_soap_status(maidy, ctx.interaction.channel.id, "SUCCESS", serial)
+        await send_soap_status(maidy, channel_id, "SUCCESS", serial)
 
 
 @bot.slash_command(description="check soap donor availability")
@@ -725,6 +801,46 @@ async def send_soap_status(
     if error_type:
         message_parts.append(str(error_type).upper())
     await bot.get_channel(int(bots_only_channel)).send(" ".join(message_parts))
+
+
+def user_id_from_topic(topic: str | None) -> int | None:
+    """The helpee a soap channel belongs to, from the mention in its topic."""
+    match = re.search(r"<@!?(\d+)>", topic or "")
+    return int(match.group(1)) if match else None
+
+
+def find_soap_channel(guild: discord.Guild, user_id: int) -> discord.TextChannel | None:
+    """The soap channel of a helpee, found by the mention maidy puts in the channel topic."""
+    for channel in guild.text_channels:
+        if user_id_from_topic(channel.topic) == user_id:
+            return channel
+    return None
+
+
+async def read_essential_ref(message: discord.Message, ref: str) -> bytes:
+    """Get the essential.exefs a SOAP_REQUEST points to, see soap_request for the formats."""
+    if ref.upper() == "ATTACHED":
+        attachments = message.attachments
+
+    elif match := MESSAGE_LINK_RE.match(ref):
+        source_channel = bot.get_channel(int(match.group(1))) or await bot.fetch_channel(
+            int(match.group(1))
+        )
+        attachments = (await source_channel.fetch_message(int(match.group(2)))).attachments
+
+    elif urlparse(ref).hostname in DISCORD_CDN_HOSTS:
+        request_data = await asyncio.to_thread(requests.get, ref, timeout=30)
+        if request_data.status_code != 200:
+            raise Exception(f"Non-200 status code: {request_data.status_code}")
+        return request_data.content
+
+    else:
+        raise Exception(f"Don't know how to get an essential from {ref}")
+
+    for attachment in attachments:
+        if attachment.filename.lower().endswith(".exefs"):
+            return await attachment.read()
+    raise Exception("No .exefs attached")
 
 
 def donorcheck(input_json: str) -> bool:
