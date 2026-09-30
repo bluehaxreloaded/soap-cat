@@ -108,9 +108,14 @@ async def doasoap(
     except discord.errors.NotFound:
         return
 
+    # Leaving the serial or file out means using what maidy has for the channel
+    with_maidy = serial is None or (
+        essential_exefs is None and essential_exefs_link is None and console_json is None
+    )
     await log(
         f"doing soap for {ctx.author.global_name} ({ctx.author.id}) in {ctx.interaction.channel.jump_url}"
         + f" ({ctx.interaction.channel.name})"
+        + (" with maidy credentials" if with_maidy else "")
     )
 
     # Extract channel and user_id
