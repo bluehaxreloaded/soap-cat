@@ -839,6 +839,11 @@ async def enabledonor(ctx: discord.ApplicationContext, name: str):
         )
         await log(f"{ctx.author.name} ({ctx.author.id}) enabled `{name}`")
 
+@bot.slash_command(description="spin")
+async def spin(ctx: discord.ApplicationContext):
+    await ctx.respond(
+        "https://cdn.discordapp.com/attachments/1345177410361888825/1554701213415637032/rotating_cat_transparent.gif"
+    )
 
 async def log(string: str):
     await bot.get_channel(int(os.getenv("LOG_CHANNEL"))).send(content=string)
