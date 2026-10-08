@@ -33,8 +33,9 @@ SOAP_REQUEST_COOLDOWN = 15  # seconds before a request for the same essential is
 recent_essentials: dict[str, float] = {}  # essential hash -> when a request for it last came in
 
 SOAP_REQUEST_RE = re.compile(
-    r"^SOAP_REQUEST\s+(\d{15,25})\s+(\S+)\s+(\S+)\s*$", re.IGNORECASE
+    r"^SOAP_REQUEST\s+(\d{15,25})\s+(\S+)\s+(\S+)(?:\s+(\d{15,25}))?\s*$", re.IGNORECASE
 )
+ARCHIVE_CHANNEL_SUFFIX = "-cya"  # maidy renames closed soap channels to end with this
 MESSAGE_LINK_RE = re.compile(
     r"^https://(?:\w+\.)?discord(?:app)?\.com/channels/\d+/(\d+)/(\d+)$"
 )
@@ -235,7 +236,8 @@ async def doasoap(
 
 @bot.listen("on_message")
 async def soap_request(message: discord.Message):
-    """SOAP_REQUEST <USERID> <SERIAL> <ESSENTIALS>, sent by maidy in the bots only channel.
+    """SOAP_REQUEST <USERID> <SERIAL> <ESSENTIALS> [CHANNELID], sent by maidy in the bots only channel.
+    CHANNELID is the helpee's soap channel. Without it, their channel is found by its topic.
     ESSENTIALS is one of:
     - STORED, to use the essential.exefs maidy saved for this helpee in their soap channel
     - a link to a message with the essential.exefs attached (e.g. maidy's "essential.exefs received" message)
@@ -257,8 +259,9 @@ async def soap_request(message: discord.Message):
     user_id = int(match.group(1))
     serial = match.group(2)
     essentials = match.group(3)
+    channel_id = int(match.group(4)) if match.group(4) else None
 
-    channel = find_soap_channel(message.guild, user_id)
+    channel = find_soap_channel(message.guild, user_id, channel_id)
     if channel is None:
         await log(f"SOAP_REQUEST for user {user_id} failed, no soap channel found for them")
         await message.reply(f"SOAP_REQUEST {user_id} [WARN: CHANNEL NOT FOUND]")
@@ -876,10 +879,19 @@ def user_id_from_topic(topic: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def find_soap_channel(guild: discord.Guild, user_id: int) -> discord.TextChannel | None:
-    """The soap channel of a helpee, found by the mention maidy puts in the channel topic."""
+def find_soap_channel(
+    guild: discord.Guild, user_id: int, channel_id: int | None = None
+) -> discord.TextChannel | None:
+    """The soap channel of a helpee, found by the mention maidy puts in the channel topic.
+    If channel_id is given, only that channel is used, and only if its topic is for this helpee.
+    Otherwise archived (-cya) channels are skipped, so an old channel isn't picked over the open one."""
+    if channel_id is not None:
+        channel = guild.get_channel(channel_id)
+        if isinstance(channel, discord.TextChannel) and user_id_from_topic(channel.topic) == user_id:
+            return channel
+        return None
     for channel in guild.text_channels:
-        if user_id_from_topic(channel.topic) == user_id:
+        if user_id_from_topic(channel.topic) == user_id and not channel.name.endswith(ARCHIVE_CHANNEL_SUFFIX):
             return channel
     return None
 
