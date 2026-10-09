@@ -33,7 +33,8 @@ SOAP_REQUEST_COOLDOWN = 15  # seconds before a request for the same essential is
 recent_essentials: dict[str, float] = {}  # essential hash -> when a request for it last came in
 
 SOAP_REQUEST_RE = re.compile(
-    r"^SOAP_REQUEST\s+(\d{15,25})\s+(\S+)\s+(\S+)(?:\s+(\d{15,25}))?\s*$", re.IGNORECASE
+    r"^SOAP_REQUEST\s+(\d{15,25})\s+(\S+)\s+(\S+)(?:\s+(\d{15,25})(?:\s+(\d{15,25}))?)?\s*$",
+    re.IGNORECASE,
 )
 ARCHIVE_CHANNEL_SUFFIX = "-cya"  # maidy renames closed soap channels to end with this
 MESSAGE_LINK_RE = re.compile(
@@ -236,8 +237,9 @@ async def doasoap(
 
 @bot.listen("on_message")
 async def soap_request(message: discord.Message):
-    """SOAP_REQUEST <USERID> <SERIAL> <ESSENTIALS> [CHANNELID], sent by maidy in the bots only channel.
+    """SOAP_REQUEST <USERID> <SERIAL> <ESSENTIALS> [CHANNELID [SOAPERID]], sent by maidy in the bots only channel.
     CHANNELID is the helpee's soap channel. Without it, their channel is found by its topic.
+    SOAPERID is the Soaper who started it (pressed Start SOAP), so the log says who it was.
     ESSENTIALS is one of:
     - STORED, to use the essential.exefs maidy saved for this helpee in their soap channel
     - a link to a message with the essential.exefs attached (e.g. maidy's "essential.exefs received" message)
@@ -260,6 +262,7 @@ async def soap_request(message: discord.Message):
     serial = match.group(2)
     essentials = match.group(3)
     channel_id = int(match.group(4)) if match.group(4) else None
+    soaper_id = int(match.group(5)) if match.group(5) else None
 
     channel = find_soap_channel(message.guild, user_id, channel_id)
     if channel is None:
@@ -272,7 +275,18 @@ async def soap_request(message: discord.Message):
         return
     active_requests.add(user_id)
 
-    who = f"user {user_id} (SOAP_REQUEST from {message.author.name})"
+    if soaper_id is not None:
+        # Same as /doasoap, which logs the Soaper who ran it
+        soaper = message.guild.get_member(soaper_id)
+        if soaper is None:
+            try:
+                soaper = await message.guild.fetch_member(soaper_id)
+            except discord.HTTPException:
+                pass
+        name = (soaper.global_name or soaper.name) if soaper else "unknown soaper"
+        who = f"{name} ({soaper_id}) with Start SOAP"
+    else:
+        who = f"user {user_id} (SOAP_REQUEST from {message.author.name})"
     try:
         try:
             essential = await read_essential_ref(message, essentials, channel, user_id)
