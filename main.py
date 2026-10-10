@@ -29,7 +29,6 @@ log_channel = None
 load_dotenv()
 soap_lock = asyncio.Lock()
 active_requests: set[int] = set()  # user ids with a SOAP_REQUEST running
-SOAP_QUEUE_CHANNEL = os.getenv("SOAP_QUEUE_CHANNEL")  # where Soapers start SOAPs now, /doasoap points here
 SOAP_REQUEST_COOLDOWN = 15  # seconds before a request for the same essential is accepted again
 recent_essentials: dict[str, float] = {}  # essential hash -> when a request for it last came in
 
@@ -66,8 +65,7 @@ def can_run():
 @bot.slash_command(description="replaced by soap-queue")
 @can_run()
 async def doasoap(ctx: discord.ApplicationContext):
-    queue = f"<#{SOAP_QUEUE_CHANNEL}>" if SOAP_QUEUE_CHANNEL else "soap-queue"
-    await ctx.respond(ephemeral=True, content=f"Please use the {queue} instead!")
+    await ctx.respond(ephemeral=True, content="Please use the Soap Queue instead!")
 
 
 @bot.slash_command(description="does a soap")
