@@ -29,6 +29,7 @@ log_channel = None
 load_dotenv()
 soap_lock = asyncio.Lock()
 active_requests: set[int] = set()  # user ids with a SOAP_REQUEST running
+SOAP_QUEUE_CHANNEL = os.getenv("SOAP_QUEUE_CHANNEL")  # where Soapers start SOAPs now, /doasoap points here
 SOAP_REQUEST_COOLDOWN = 15  # seconds before a request for the same essential is accepted again
 recent_essentials: dict[str, float] = {}  # essential hash -> when a request for it last came in
 
@@ -60,6 +61,13 @@ def can_run():
                 raise commands.MissingRole(id)
 
     return commands.check(uhhhhhhh)
+
+
+@bot.slash_command(description="replaced by soap-queue")
+@can_run()
+async def doasoap(ctx: discord.ApplicationContext):
+    queue = f"<#{SOAP_QUEUE_CHANNEL}>" if SOAP_QUEUE_CHANNEL else "soap-queue"
+    await ctx.respond(ephemeral=True, content=f"Please use the {queue} instead!")
 
 
 @bot.slash_command(description="does a soap")
@@ -97,7 +105,7 @@ def can_run():
     description="involve maidy in the soap things, defaults to true",
     default=True,
 )
-async def doasoap(
+async def performsoap(
     ctx: discord.ApplicationContext,
     serial: str,
     essential_exefs: discord.Attachment,
@@ -276,7 +284,7 @@ async def soap_request(message: discord.Message):
     active_requests.add(user_id)
 
     if soaper_id is not None:
-        # Same as /doasoap, which logs the Soaper who ran it
+        # Same as /performsoap, which logs the Soaper who ran it
         soaper = message.guild.get_member(soaper_id)
         if soaper is None:
             try:
@@ -346,7 +354,7 @@ async def perform_soap(
     serial: str,
     maidy: bool,
 ):
-    """The soap itself, shared by /doasoap and SOAP_REQUEST. respond sends content/file back to whoever asked."""
+    """The soap itself, shared by /performsoap and SOAP_REQUEST. respond sends content/file back to whoever asked."""
     resultStr = str("")
 
     if serial is not None:
@@ -1059,7 +1067,7 @@ async def on_application_command_error(
             content="an error has occurred, please do not try again",
         )
 
-        if str(ctx.command) == "doasoap":
+        if str(ctx.command) == "performsoap":
             for dict in ctx.selected_options:
                 if dict["name"] == "maidy":
                     maidy = dict["value"]
