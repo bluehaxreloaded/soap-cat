@@ -28,7 +28,7 @@ bot = discord.Bot(intents=intents)
 log_channel = None
 load_dotenv()
 soap_lock = asyncio.Lock()
-active_requests: set[int] = set()  # user ids with a SOAP_REQUEST running
+soaping_channels: set[int] = set()  # soap channel ids with a /performsoap or SOAP_REQUEST running
 SOAP_REQUEST_COOLDOWN = 15  # seconds before a request for the same essential is accepted again
 recent_essentials: dict[str, float] = {}  # essential hash -> when a request for it last came in
 
@@ -116,6 +116,35 @@ async def performsoap(
     except discord.errors.NotFound:
         return
 
+    # One soap per channel at a time, so a Start SOAP press and /performsoap can't both soap the console
+    channel_id = ctx.interaction.channel.id
+    if channel_id in soaping_channels:
+        await ctx.respond(
+            ephemeral=True,
+            content="a soap is already running in this channel, nothing has been done",
+        )
+        await log(
+            f"ignoring soap for {ctx.author.global_name} ({ctx.author.id}) in {ctx.interaction.channel.jump_url}"
+            + f" ({ctx.interaction.channel.name}), one is already running there"
+        )
+        return
+    soaping_channels.add(channel_id)
+    try:
+        await run_performsoap(
+            ctx, serial, essential_exefs, essential_exefs_link, console_json, maidy
+        )
+    finally:
+        soaping_channels.discard(channel_id)
+
+
+async def run_performsoap(
+    ctx: discord.ApplicationContext,
+    serial: str,
+    essential_exefs: discord.Attachment,
+    essential_exefs_link: str,
+    console_json: discord.Attachment,
+    maidy: bool,
+):
     # Leaving the serial or file out means using what maidy has for the channel
     with_maidy = serial is None or (
         essential_exefs is None and essential_exefs_link is None and console_json is None
@@ -276,10 +305,12 @@ async def soap_request(message: discord.Message):
         await message.reply(f"SOAP_REQUEST {user_id} [WARN: CHANNEL NOT FOUND]")
         return
 
-    if user_id in active_requests:
-        await log(f"ignoring SOAP_REQUEST for user {user_id}, one is already running")
+    if channel.id in soaping_channels:
+        await log(
+            f"ignoring SOAP_REQUEST for user {user_id}, a soap is already running in {channel.jump_url} ({channel.name})"
+        )
         return
-    active_requests.add(user_id)
+    soaping_channels.add(channel.id)
 
     if soaper_id is not None:
         # Same as /performsoap, which logs the Soaper who ran it
@@ -338,7 +369,7 @@ async def soap_request(message: discord.Message):
             await send_soap_status(True, channel.id, "ERROR", "UNKNOWN")
             raise e
     finally:
-        active_requests.discard(user_id)
+        soaping_channels.discard(channel.id)
 
 
 async def perform_soap(
