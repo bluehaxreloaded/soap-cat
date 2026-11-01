@@ -353,8 +353,9 @@ async def soap_request(message: discord.Message):
 
         try:
             await perform_soap(
-                # Only the result text goes back, the console .json isn't needed and shouldn't sit in the channel
-                respond=lambda content, file=None: message.reply(content=content),
+                # Maidy only reads SOAP_STATUS, so the result text goes to the log instead of the bots only channel.
+                # The console .json isn't needed and shouldn't sit anywhere
+                respond=lambda content, file=None: log(f"soap result for {who}:\n{content}"),
                 who=who,
                 channel_id=channel.id,
                 user_id=user_id,
