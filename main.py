@@ -65,7 +65,7 @@ def can_run():
 @bot.slash_command(description="replaced by soap-queue")
 @can_run()
 async def doasoap(ctx: discord.ApplicationContext):
-    await ctx.respond(ephemeral=True, content="Please use the Soap Queue instead!")
+    await ctx.respond(ephemeral=True, content="Please use the Soap Queue instead!\nTrying to redo a SOAP? Use `/performsoap`!")
 
 
 @bot.slash_command(description="does a soap")
