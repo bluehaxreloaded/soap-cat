@@ -100,3 +100,17 @@ class the_db:
             (status, name),
         )
         self.connection.commit()
+
+    def record_soap_details(self, channel_id, soaper_id, donor) -> None:
+        """Save the donor and Soaper a soap used on maidy's row for the channel, so maidy records them with the SOAP.
+        Does nothing until maidy has created the channels table."""
+        if not channel_id:
+            return
+        try:
+            self.cursor.execute(
+                "UPDATE channels SET donor = %s, soaper_id = COALESCE(%s, soaper_id) WHERE channel_id = %s",
+                (donor, soaper_id, channel_id),
+            )
+            self.connection.commit()
+        finally:
+            self.connection.close()

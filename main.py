@@ -260,6 +260,7 @@ async def run_performsoap(
     await perform_soap(
         respond=lambda **kwargs: ctx.respond(ephemeral=True, **kwargs),
         who=f"{ctx.author.global_name} ({ctx.author.id})",
+        soaper_id=ctx.author.id,
         channel_id=ctx.interaction.channel.id,
         user_id=user_id,
         guild=ctx.guild,
@@ -364,6 +365,7 @@ async def soap_request(message: discord.Message):
                 soap_name=soap_name,
                 serial=serial,
                 maidy=True,
+                soaper_id=soaper_id,
             )
         except Exception as e:
             await log(f"soap for {who} failed with an error\n{e}")
@@ -383,9 +385,11 @@ async def perform_soap(
     soap_name: str,
     serial: str,
     maidy: bool,
+    soaper_id: int | None = None,
 ):
     """The soap itself, shared by /performsoap and SOAP_REQUEST. respond sends content/file back to whoever asked."""
     resultStr = str("")
+    donor_json_name = None
 
     if serial is not None:
         # .upper() is just for consistency
@@ -538,6 +542,12 @@ async def perform_soap(
         + f"user_id is {user_id}\n"
         + f"lottery is {lottery}\n"
     )
+
+    # Tell maidy which donor and Soaper this used before it hears the result, so it can record them with the SOAP
+    try:
+        await asyncio.to_thread(the_db().record_soap_details, channel_id, soaper_id, donor_json_name)
+    except Exception as e:
+        print(f"could not save the soap details for channel {channel_id}: {e!r}")
 
     if lottery:
         # Send SOAP_STATUS message
