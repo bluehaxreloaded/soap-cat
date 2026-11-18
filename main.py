@@ -54,7 +54,7 @@ MAX_ESSENTIAL_SIZE = 0x4000
 
 def can_run():
     async def uhhhhhhh(interaction: discord.Interaction) -> bool:
-        for id in [1345177409154191414, 1316931678509334548, 1398475463927791697]:
+        for id in [1345177409154191414, 1316931678509334548]:  # Soaper in Bluehax, Reloaded, void in Voids
             try:
                 if interaction.user.roles[-1] >= interaction.guild.get_role(id):
                     return True
