@@ -1,3 +1,7 @@
+import warnings
+
+# cryptography 46 warns on every sect233r1 use that it's going away. It's the curve the 3DS uses, see requirements.txt
+warnings.filterwarnings("ignore", message=r"SECT\d+R\d+ will be removed")
 from db_abstractor import the_db
 from cleaninty_abstractor import cleaninty_abstractor
 

@@ -1,4 +1,8 @@
 import asyncio
+import warnings
+
+# cryptography 46 warns on every sect233r1 use that it's going away. It's the curve the 3DS uses, see requirements.txt
+warnings.filterwarnings("ignore", message=r"SECT\d+R\d+ will be removed")
 import datetime
 import discord
 import hashlib

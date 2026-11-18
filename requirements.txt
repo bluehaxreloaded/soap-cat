@@ -3,5 +3,5 @@ pyctr==0.7.6
 python-dotenv>=1.0.0
 py-cord==2.8.0
 mysql-connector-python>=9.1.0
-cryptography==43.0.3 # old version because deprecation warnings are annoying
+cryptography==46.0.7 # newest with sect233r1, which the 3DS uses. 47+ removed it and cleaninty won't load
 requests>=2.32.4
