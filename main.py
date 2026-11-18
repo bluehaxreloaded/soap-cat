@@ -1088,6 +1088,27 @@ async def on_ready():
 
     await bot.change_presence(activity=discord.Game(name="I HAS SOAP *om nom nom*"))
 
+    global heartbeat_task
+    if heartbeat_task is None:
+        heartbeat_task = asyncio.create_task(heartbeat_loop())
+
+
+HEARTBEAT_SECONDS = 60
+heartbeat_task = None
+
+
+async def heartbeat_loop():
+    """Write a heartbeat every minute while connected to Discord, so maidy can alert when soap-cat goes down."""
+    while True:
+        if bot.is_ready() and not bot.is_closed():
+            latency = bot.latency
+            latency_ms = int(latency * 1000) if latency == latency and latency != float("inf") else None
+            try:
+                await asyncio.to_thread(lambda: the_db().write_heartbeat(latency_ms))
+            except Exception as e:
+                print(f"heartbeat failed: {e!r}")
+        await asyncio.sleep(HEARTBEAT_SECONDS)
+
 
 @bot.event
 async def on_application_command_error(

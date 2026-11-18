@@ -114,3 +114,16 @@ class the_db:
             self.connection.commit()
         finally:
             self.connection.close()
+
+    def write_heartbeat(self, latency_ms) -> None:
+        """Tell maidy soap-cat is up and connected, see maid-cat's status.py. Does nothing until maidy has created
+        the bot_heartbeats table."""
+        try:
+            self.cursor.execute(
+                """INSERT INTO bot_heartbeats (bot, beat_at, latency_ms) VALUES ('soap-cat', UTC_TIMESTAMP(), %s)
+                   ON DUPLICATE KEY UPDATE beat_at = VALUES(beat_at), latency_ms = VALUES(latency_ms)""",
+                (latency_ms,),
+            )
+            self.connection.commit()
+        finally:
+            self.connection.close()
