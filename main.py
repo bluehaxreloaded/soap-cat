@@ -161,7 +161,7 @@ async def run_performsoap(
 
     # Extract channel and user_id
     channel = bot.get_channel(ctx.channel_id)
-    user_id = user_id_from_topic(getattr(channel, "topic", None))
+    user_id = await channel_helpee(channel)
 
     # No serial given, so use the one the helpee entered with maidy
     if serial is None:
@@ -304,7 +304,7 @@ async def soap_request(message: discord.Message):
     channel_id = int(match.group(4)) if match.group(4) else None
     soaper_id = int(match.group(5)) if match.group(5) else None
 
-    channel = find_soap_channel(message.guild, user_id, channel_id)
+    channel = await find_soap_channel(message.guild, user_id, channel_id)
     if channel is None:
         await log(f"SOAP_REQUEST for user {user_id} failed, no soap channel found for them")
         await message.reply(f"SOAP_REQUEST {user_id} [WARN: CHANNEL NOT FOUND]")
@@ -945,15 +945,27 @@ def user_id_from_topic(topic: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def find_soap_channel(
+async def channel_helpee(channel) -> int | None:
+    """The helpee a soap channel is for. maidy saves it in the database, and the topic is only used if it isn't there."""
+    if channel is None:
+        return None
+    try:
+        saved = await asyncio.wait_for(asyncio.to_thread(lambda: the_db().channel_helpee(channel.id)), 5)
+    except Exception as e:
+        print(f"Could not read the helpee of channel {channel.id} from the database: {e!r}")
+        saved = None
+    return saved or user_id_from_topic(getattr(channel, "topic", None))
+
+
+async def find_soap_channel(
     guild: discord.Guild, user_id: int, channel_id: int | None = None
 ) -> discord.TextChannel | None:
-    """The soap channel of a helpee, found by the mention maidy puts in the channel topic.
-    If channel_id is given, only that channel is used, and only if its topic is for this helpee.
-    Otherwise archived (-cya) channels are skipped, so an old channel isn't picked over the open one."""
+    """The soap channel of a helpee.
+    If channel_id is given (maidy always sends it), only that channel is used, and only if it's for this helpee.
+    Otherwise it's found by the mention in the topic, skipping archived (-cya) channels so an old one isn't picked."""
     if channel_id is not None:
         channel = guild.get_channel(channel_id)
-        if isinstance(channel, discord.TextChannel) and user_id_from_topic(channel.topic) == user_id:
+        if isinstance(channel, discord.TextChannel) and await channel_helpee(channel) == user_id:
             return channel
         return None
     for channel in guild.text_channels:

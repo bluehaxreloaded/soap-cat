@@ -115,6 +115,17 @@ class the_db:
         finally:
             self.connection.close()
 
+    def channel_helpee(self, channel_id) -> int | None:
+        """Who maidy saved a soap channel as being for (see maid-cat's channel_state.py), or None if it isn't saved."""
+        try:
+            self.cursor.execute(
+                "SELECT user_id FROM channels WHERE channel_id = %s AND status <> 'deleted'", (channel_id,)
+            )
+            row = self.cursor.fetchone()
+            return int(row[0]) if row and row[0] else None
+        finally:
+            self.connection.close()
+
     def write_heartbeat(self, latency_ms) -> None:
         """Tell maidy soap-cat is up and connected, see maid-cat's status.py. Does nothing until maidy has created
         the bot_heartbeats table."""
